@@ -2,6 +2,7 @@ const Review = require('../models/review');
 const Book = require('../models/book');
 const Like = require('../models/like');
 const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
 
 const updateBookStats = async (bookId) => {
     const reviews = await Review.find({ book: bookId });
@@ -120,9 +121,13 @@ class reviewcontroller {
             let currentuserid = null;
 
             try {
-                const token = req.cookies?.token;
+                const authHeader = req.headers.authorization || req.headers.Authorization;
+                const bearerToken = authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+                    ? authHeader.slice(7).trim()
+                    : null;
+                const token = req.cookies?.user_token || req.cookies?.token || bearerToken;
                 if (token) {
-                    const decoded = jwt.verify(token, proeccess.env.JWT_SECRET);
+                    const decoded = jwt.verify(token, process.env.JWT_SECRET);
                     currentuserid = decoded.id;
                 }
             } catch (error) {

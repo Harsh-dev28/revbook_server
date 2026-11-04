@@ -269,7 +269,7 @@ class bookcontroller {
     // AI: GET /author/mybooks (isauthor) - author ki apni jodi hui books (author dashboard ke liye)
     static getmybooks = async (req, res) => {
         try {
-            const books = await Book.find({ addedBy: req.admin._id })
+            const books = await Book.find({ $or: [{ addedBy: req.admin._id }, { author: req.admin.name }] })
                 .sort({ createdAt: -1 });
 
             return res.status(200).json({

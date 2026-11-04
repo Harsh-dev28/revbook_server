@@ -1,4 +1,4 @@
-const isProduction = process.env.NODE_ENV === 'production';
+const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RENDER || Boolean(process.env.ONRENDER);
 
 const cookieOptions = {
     httpOnly: true,
@@ -14,10 +14,11 @@ const clearCookieOptions = {
     sameSite: isProduction ? 'none' : 'lax',
 };
 
-const USER_COOKIE_NAME = 'usertoken';
-const AUTHOR_COOKIE_NAME = 'authortoken';
+const USER_COOKIE_NAME = 'user_token';
+const AUTHOR_COOKIE_NAME = 'author_token';
 
 module.exports = {
+    isProduction,
     cookieOptions,
     clearCookieOptions,
     USER_COOKIE_NAME,

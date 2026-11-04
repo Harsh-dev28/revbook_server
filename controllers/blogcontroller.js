@@ -11,7 +11,11 @@ const parsetags = (tags) => {
 
 const getoptionaluserId = (req) => {
     try {
-        const token = req.cookies?.token;
+        const authHeader = req.headers.authorization || req.headers.Authorization;
+        const bearerToken = authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+            ? authHeader.slice(7).trim()
+            : null;
+        const token = req.cookies?.user_token || req.cookies?.token || bearerToken;
         // FIX: condition ulti thi (token hone par null de deta tha)
         if (!token) return null;
         return jwt.verify(token, process.env.JWT_SECRET).id;
@@ -30,7 +34,8 @@ class blogcontroller {
     static writeblog = async (req, res) => {
         try {
 
-            const { title, content, book, tags, status } = req.body || {};
+            const { title, content, tags, status } = req.body || {};
+            const book = req.body?.book || req.body?.bookId;
 
             if (!title?.trim() || !content?.trim() || !book) {
                 return res.status(400).json({
@@ -262,7 +267,8 @@ class blogcontroller {
                 })
             }
 
-            const { title, content, book, tags, status } = req.body || {};
+            const { title, content, tags, status } = req.body || {};
+            const book = req.body?.book || req.body?.bookId;
 
             // AI: title ya content badalne par purana AI summary hata do, taaki nayi baar naya ban sake
             // (pehle ye reset save ke baad tha, isliye database mein kabhi save hi nahi hota tha)

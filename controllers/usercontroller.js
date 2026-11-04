@@ -2,13 +2,13 @@ const User = require('../models/user');
 const cloudinary = require('../config/cloudinary');
 const bcrypt = require("bcryptjs");
 const jwt = require('jsonwebtoken');
-const fs = require('fs');
+const { cookieOptions, clearCookieOptions } = require('../config/cookie');
 
 class usercontroller {
 
     static registeruser = async (req, res) => {
         try {
-            const { name, email, password, bio, favouritegenere } = req.body
+            const { name, email, password, bio, favouritegenere } = req.body;
 
             if (!name || !email || !password || !bio || !favouritegenere) {
                 return res.status(400).json({
@@ -17,7 +17,8 @@ class usercontroller {
                 });
             }
 
-            const userexist = await User.findOne({ email });
+            const normalizedEmail = email.trim().toLowerCase();
+            const userexist = await User.findOne({ email: normalizedEmail });
 
             if (userexist) {
                 return res.status(409).json({
@@ -41,10 +42,10 @@ class usercontroller {
             const hashedPassword = await bcrypt.hash(password, 10);
 
             const user = await User.create({
-                name,
-                email,
+                name: name.trim(),
+                email: normalizedEmail,
                 password: hashedPassword,
-                bio: bio || "",
+                bio: bio ? bio.trim() : "",
                 favouritegenere,
                 profileimage: uploadimage.secure_url,
                 profileimage_id: uploadimage.public_id,
@@ -56,24 +57,21 @@ class usercontroller {
                 { expiresIn: "7d" }
             );
 
-            const cookieOptions = {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === "production",
-                sameSite: "lax",
-                maxAge: 7 * 24 * 60 * 60 * 1000,
-            };
             res.cookie("token", token, cookieOptions);
             res.cookie("user_token", token, cookieOptions);
+
+            const userObj = user.toObject();
+            delete userObj.password;
 
             return res.status(201).json({
                 success: true,
                 message: "User registered successfully",
-                user
+                token,
+                user: userObj
             });
 
-
         } catch (error) {
-            console.log(error);
+            console.error("Register user error:", error);
             return res.status(500).json({
                 success: false,
                 message: "Internal server error",
@@ -89,9 +87,9 @@ class usercontroller {
                 .select("-password");
 
             if (!userdata) {
-                return res.status(494).json({
+                return res.status(404).json({
                     success: false,
-                    message: "user not found"
+                    message: "User not found"
                 });
             }
 
@@ -99,16 +97,15 @@ class usercontroller {
                 success: true,
                 user: userdata,
                 admin: userdata
-            })
+            });
 
         } catch (error) {
-            console.log(error)
+            console.error("Get user error:", error);
             return res.status(500).json({
                 success: false,
                 message: "Internal server error"
             });
         }
-
     };
 
     static getuserbyid = async (req, res) => {
@@ -119,7 +116,7 @@ class usercontroller {
             if (!userdata) {
                 return res.status(404).json({
                     success: false,
-                    message: "USer not found"
+                    message: "User not found"
                 });
             }
 
@@ -130,12 +127,11 @@ class usercontroller {
             });
 
         } catch (error) {
-            console.log(error)
+            console.error("Get user by id error:", error);
             return res.status(500).json({
-                sucess: false,
-                message: "Internal server error",
-                user: userdata
-            })
+                success: false,
+                message: "Internal server error"
+            });
         }
     };
 
@@ -150,7 +146,8 @@ class usercontroller {
                 });
             }
 
-            const isuserexist = await User.findOne({ email });
+            const normalizedEmail = email.trim().toLowerCase();
+            const isuserexist = await User.findOne({ email: normalizedEmail });
 
             if (!isuserexist) {
                 return res.status(404).json({
@@ -174,34 +171,29 @@ class usercontroller {
             const token = jwt.sign(
                 { id: isuserexist._id },
                 process.env.JWT_SECRET,
-                { expiresIn: "1d" }
+                { expiresIn: "7d" }
             );
 
-            const cookieOptions = {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === "production",
-                sameSite: "lax",
-                maxAge: 24 * 60 * 60 * 1000
-            };
             res.cookie("token", token, cookieOptions);
             res.cookie("user_token", token, cookieOptions);
 
             return res.status(200).json({
                 success: true,
                 message: "Logged in successfully",
+                token,
                 user: {
                     _id: isuserexist._id,
                     name: isuserexist.name,
                     email: isuserexist.email,
                     bio: isuserexist.bio,
                     profileimage: isuserexist.profileimage,
-                    favoriteGenres: isuserexist.favoriteGenres
+                    favouritegenere: isuserexist.favouritegenere,
+                    favoriteGenres: isuserexist.favouritegenere ? [isuserexist.favouritegenere] : []
                 }
             });
 
         } catch (error) {
-            console.log(error);
-
+            console.error("Login user error:", error);
             return res.status(500).json({
                 success: false,
                 message: "Internal server error"
@@ -211,7 +203,6 @@ class usercontroller {
 
     static updateuser = async (req, res) => {
         try {
-
             const { name, email, password, bio, favouritegenere } = req.body;
 
             const userexist = await User.findById(req.user._id);
@@ -223,9 +214,9 @@ class usercontroller {
                 });
             }
 
-            // email badal rahe ho toh check karo ki kisi aur ke paas na ho
-            if (email && email !== userexist.email) {
-                const emailtaken = await User.findOne({ email });
+            if (email && email.trim().toLowerCase() !== userexist.email) {
+                const normalizedEmail = email.trim().toLowerCase();
+                const emailtaken = await User.findOne({ email: normalizedEmail });
 
                 if (emailtaken) {
                     return res.status(409).json({
@@ -233,18 +224,17 @@ class usercontroller {
                         message: "Email already in use"
                     });
                 }
-                userexist.email = email;
+                userexist.email = normalizedEmail;
             }
 
-            if (name) userexist.name = name;
-            if (bio) userexist.bio = bio;
+            if (name) userexist.name = name.trim();
+            if (bio !== undefined) userexist.bio = bio.trim();
             if (favouritegenere) userexist.favouritegenere = favouritegenere;
 
             if (password) {
                 userexist.password = await bcrypt.hash(password, 10);
             }
 
-            // optional: nayi profile image aayi toh purani Cloudinary se hatao
             if (req.files && req.files.profileimage) {
                 if (userexist.profileimage_id) {
                     await cloudinary.uploader.destroy(userexist.profileimage_id);
@@ -271,7 +261,7 @@ class usercontroller {
             });
 
         } catch (error) {
-            console.log(error);
+            console.error("Update user error:", error);
             return res.status(500).json({
                 success: false,
                 message: "Internal server error"
@@ -281,7 +271,6 @@ class usercontroller {
 
     static deleteuser = async (req, res) => {
         try {
-
             const userexist = await User.findById(req.user._id);
 
             if (!userexist) {
@@ -297,8 +286,8 @@ class usercontroller {
 
             await User.findByIdAndDelete(req.user._id);
 
-            res.clearCookie("token");
-            res.clearCookie("user_token");
+            res.clearCookie("token", clearCookieOptions);
+            res.clearCookie("user_token", clearCookieOptions);
 
             return res.status(200).json({
                 success: true,
@@ -306,38 +295,35 @@ class usercontroller {
             });
 
         } catch (error) {
-            console.log(error)
+            console.error("Delete user error:", error);
             return res.status(500).json({
                 success: false,
                 message: "Internal server error"
-            })
+            });
         }
-
     };
 
     static logoutuser = async (req, res) => {
         try {
-            res.clearCookie("token");
-            res.clearCookie("user_token");
+            res.clearCookie("token", clearCookieOptions);
+            res.clearCookie("user_token", clearCookieOptions);
 
-            return res.status(201).json({
+            return res.status(200).json({
                 success: true,
-                message: "user logout sucxcessfully"
-            })
+                message: "User logout successfully"
+            });
 
         } catch (error) {
-            console.log(error)
+            console.error("Logout user error:", error);
             return res.status(500).json({
                 success: false,
-                message: "Inetrnal server error"
-            })
+                message: "Internal server error"
+            });
         }
-
     };
 
     static changeuserpassword = async (req, res) => {
         try {
-
             const { oldpassword, newpassword, confirmpassword } = req.body;
 
             if (!oldpassword || !newpassword || !confirmpassword) {
@@ -383,7 +369,6 @@ class usercontroller {
             }
 
             userexist.password = await bcrypt.hash(newpassword, 10);
-
             await userexist.save();
 
             return res.status(200).json({
@@ -392,7 +377,7 @@ class usercontroller {
             });
 
         } catch (error) {
-            console.log(error);
+            console.error("Change user password error:", error);
             return res.status(500).json({
                 success: false,
                 message: "Internal server error"

@@ -8,7 +8,7 @@ const auth = async (req, res, next) => {
             ? authHeader.slice(7).trim()
             : null;
 
-        const token = req.cookies?.author_token || req.cookies?.token || bearerToken;
+        const token = req.cookies?.author_token || req.cookies?.authortoken || req.cookies?.token || bearerToken;
 
         if (!token) {
             return res.status(401).json({

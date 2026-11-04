@@ -2,32 +2,31 @@ const admin = require('../models/author');
 const cloudinary = require('../config/cloudinary');
 const bcrypt = require("bcryptjs");
 const jwt = require('jsonwebtoken');
-const fs = require('fs');
+const { cookieOptions, clearCookieOptions } = require('../config/cookie');
 
 class authorcontroller {
 
     static registerauthor = async (req, res) => {
-
         try {
             const { name, email, password } = req.body;
 
             if (!name || !email || !password) {
-                res.status(400).json({
+                return res.status(400).json({
                     success: false,
                     message: "All fields are required"
                 });
             }
 
-            const adminexist = await admin.findOne({ email });
+            const normalizedEmail = email.trim().toLowerCase();
+            const adminexist = await admin.findOne({ email: normalizedEmail });
 
             if (adminexist) {
-                res.status(400).json({
+                return res.status(409).json({
                     success: false,
-                    message: "Admin already exist"
-                })
+                    message: "Admin already exists"
+                });
             }
 
-            // --- Cloudinary photo upload (added) ---
             if (!req.files || !req.files.profileImage) {
                 return res.status(400).json({
                     success: false,
@@ -39,41 +38,44 @@ class authorcontroller {
                 req.files.profileImage.tempFilePath,
                 { folder: "revbook/authors" }
             );
-            // --- end addition ---
 
             const hashedPassword = await bcrypt.hash(password, 10);
 
             const result = await admin.create({
-                name,
-                email,
+                name: name.trim(),
+                email: normalizedEmail,
                 password: hashedPassword,
-                profileImage: uploadedImage.secure_url,       // added
-                profileImage_id: uploadedImage.public_id,     // added
+                profileImage: uploadedImage.secure_url,
+                profileImage_id: uploadedImage.public_id,
             });
 
-            res.status(201).json({
+            return res.status(201).json({
                 success: true,
-                message: "Admin Created successfully"
-            })
+                message: "Admin created successfully"
+            });
+
         } catch (error) {
-
-            console.log(error)
-
-            res.status(500).json({
-                suucess: false,
+            console.error("Register author error:", error);
+            return res.status(500).json({
+                success: false,
                 message: "Internal server error"
-            })
+            });
         }
-
-
     };
 
     static loginauthor = async (req, res) => {
-
         try {
             const { email, password } = req.body;
 
-            const adminexist = await admin.findOne({ email });
+            if (!email || !password) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Email and password are required"
+                });
+            }
+
+            const normalizedEmail = email.trim().toLowerCase();
+            const adminexist = await admin.findOne({ email: normalizedEmail });
 
             if (!adminexist) {
                 return res.status(404).json({
@@ -97,33 +99,27 @@ class authorcontroller {
             const token = jwt.sign(
                 { id: adminexist._id },
                 process.env.JWT_SECRET,
-                { expiresIn: "1d" }
+                { expiresIn: "7d" }
             );
 
-            const cookieOptions = {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === "production",
-                sameSite: "lax",
-                maxAge: 24 * 60 * 60 * 1000
-            };
             res.cookie("token", token, cookieOptions);
             res.cookie("author_token", token, cookieOptions);
 
             return res.status(200).json({
                 success: true,
-                message: "Logged in Successfully",
+                message: "Logged in successfully",
                 token,
                 admin: {
                     _id: adminexist._id,
                     name: adminexist.name,
-                    email: adminexist.email
+                    email: adminexist.email,
+                    profileImage: adminexist.profileImage
                 }
             });
 
         } catch (error) {
-            console.log(error)
-
-            res.status(500).json({
+            console.error("Login author error:", error);
+            return res.status(500).json({
                 success: false,
                 message: "Internal Server Error"
             });
@@ -131,31 +127,28 @@ class authorcontroller {
     };
 
     static logoutauthor = async (req, res) => {
-
         try {
-            res.clearCookie("token");
-            res.clearCookie("author_token");
+            res.clearCookie("token", clearCookieOptions);
+            res.clearCookie("author_token", clearCookieOptions);
 
-            return res.status(201).json({
+            return res.status(200).json({
                 success: true,
-                message: "Logout Successfully done"
-            })
+                message: "Logout successfully done"
+            });
         } catch (error) {
-
-            console.log(error)
-
-            return res.status(500).josn({
+            console.error("Logout author error:", error);
+            return res.status(500).json({
                 success: false,
-                messgae: "Internal server error"
-            })
+                message: "Internal server error"
+            });
         }
     };
 
     static getauthorprofile = async (req, res) => {
         try {
-
+            const authorId = req.params?.id || req.admin?._id;
             const adminData = await admin
-                .findById(req.admin._id)
+                .findById(authorId)
                 .select("-password");
 
             if (!adminData) {
@@ -165,27 +158,26 @@ class authorcontroller {
                 });
             }
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
                 admin: adminData
             });
 
         } catch (error) {
-
-            console.log(error);
-
-            res.status(500).json({
+            console.error("Get author profile error:", error);
+            return res.status(500).json({
                 success: false,
-                message: error.message
+                message: error.message || "Internal server error"
             });
         }
     };
 
     static updateauthorprofile = async (req, res) => {
         try {
-            const { name, email } = req.body || {};
+            const authorId = req.admin?._id || req.params?.id;
+            const { name, email, oldPassword, newPassword } = req.body || {};
 
-            const adminexist = await admin.findById(req.admin._id);
+            const adminexist = await admin.findById(authorId);
 
             if (!adminexist) {
                 return res.status(404).json({
@@ -194,19 +186,57 @@ class authorcontroller {
                 });
             }
 
-            adminexist.name = name || adminexist.name;
-            adminexist.email = email || adminexist.email;
+            if (email && email.trim().toLowerCase() !== adminexist.email) {
+                const normalizedEmail = email.trim().toLowerCase();
+                const emailtaken = await admin.findOne({ email: normalizedEmail });
+
+                if (emailtaken && emailtaken._id.toString() !== adminexist._id.toString()) {
+                    return res.status(409).json({
+                        success: false,
+                        message: "Email already in use"
+                    });
+                }
+                adminexist.email = normalizedEmail;
+            }
+
+            if (name) adminexist.name = name.trim();
+
+            if (oldPassword && newPassword) {
+                const isPasswordValid = await bcrypt.compare(oldPassword, adminexist.password);
+                if (!isPasswordValid) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Current password is incorrect"
+                    });
+                }
+                adminexist.password = await bcrypt.hash(newPassword, 10);
+            }
+
+            if (req.files && req.files.profileImage) {
+                if (adminexist.profileImage_id) {
+                    await cloudinary.uploader.destroy(adminexist.profileImage_id);
+                }
+                const uploaded = await cloudinary.uploader.upload(
+                    req.files.profileImage.tempFilePath,
+                    { folder: "revbook/authors" }
+                );
+                adminexist.profileImage = uploaded.secure_url;
+                adminexist.profileImage_id = uploaded.public_id;
+            }
 
             await adminexist.save();
 
+            const adminData = adminexist.toObject();
+            delete adminData.password;
+
             return res.status(200).json({
                 success: true,
-                message: "Admin updated successfully"
+                message: "Author updated successfully",
+                admin: adminData
             });
 
         } catch (error) {
-            console.error(error);
-
+            console.error("Update author profile error:", error);
             return res.status(500).json({
                 success: false,
                 message: "Internal Server Error"
@@ -215,19 +245,15 @@ class authorcontroller {
     };
 
     static changeauthorpasssword = async (req, res) => {
-
         try {
-
             const { oldpassword, newpassword, confirmpassword } = req.body;
 
-            const adminexist = await admin.findById(
-                req.admin._id
-            ).select("+password");
+            const adminexist = await admin.findById(req.admin._id);
 
             if (!adminexist) {
                 return res.status(404).json({
                     success: false,
-                    message: "admin not found"
+                    message: "Admin not found"
                 });
             }
 
@@ -239,42 +265,35 @@ class authorcontroller {
             if (!ispasswordvalid) {
                 return res.status(400).json({
                     success: false,
-                    message: "password is incorrect"
+                    message: "Current password is incorrect"
                 });
             }
 
             if (newpassword !== confirmpassword) {
                 return res.status(400).json({
                     success: false,
-                    message: "New Password don't match"
-                })
+                    message: "New passwords do not match"
+                });
             }
 
-            adminexist.password = await bcrypt.hash(
-                newpassword,
-                10
-            );
-
+            adminexist.password = await bcrypt.hash(newpassword, 10);
             await adminexist.save();
 
-            res.status(201).json({
+            return res.status(200).json({
                 success: true,
                 message: "Password updated successfully"
             });
 
-
         } catch (error) {
-            console.log(error)
+            console.error("Change author password error:", error);
             return res.status(500).json({
                 success: false,
                 message: "Internal Server Error"
-            })
-
+            });
         }
     };
 
     static deleteauthor = async (req, res) => {
-
         try {
             const adminexist = await admin.findById(req.admin._id);
 
@@ -285,15 +304,14 @@ class authorcontroller {
                 });
             }
 
-            // author ki profile image Cloudinary se hatao
             if (adminexist.profileImage_id) {
                 await cloudinary.uploader.destroy(adminexist.profileImage_id);
             }
 
             await admin.findByIdAndDelete(req.admin._id);
 
-            res.clearCookie("token");
-            res.clearCookie("author_token");
+            res.clearCookie("token", clearCookieOptions);
+            res.clearCookie("author_token", clearCookieOptions);
 
             return res.status(200).json({
                 success: true,
@@ -301,7 +319,7 @@ class authorcontroller {
             });
 
         } catch (error) {
-            console.log(error);
+            console.error("Delete author error:", error);
             return res.status(500).json({
                 success: false,
                 message: "Internal Server Error"

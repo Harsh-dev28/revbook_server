@@ -12,17 +12,16 @@ const isuser = require("../middleware/isuser");
 const isauthor = require("../middleware/isauthor");
 const ratelimit = require('express-rate-limit');
 
-// AI: AI routes par limit, ek IP se 10 minute mein 20 requests
-// (pehle ratelimit import tha par kahin use nahi hua tha)
+// AI: AI routes rate limit - 30 requests per 10 minutes per IP
 const aiLimiter = ratelimit({
     windowMs: 10 * 60 * 1000,
-    limit: 20,
+    limit: 30,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { success: false, message: "Too many AI requests, try again later" },
+    message: { success: false, message: "Too many AI requests, please try again in a few minutes" },
 });
 
-//user route 
+// ================= USER ROUTES =================
 router.post('/registeruser', user.registeruser);
 router.post('/loginuser', user.loginuser);
 router.get('/getuser', isuser, user.getuser);
@@ -32,38 +31,44 @@ router.put('/changeuserpassword/:id', isuser, user.changeuserpassword);
 router.get('/logoutuser', user.logoutuser);
 router.delete('/deleteuser/:id', isuser, user.deleteuser);
 
-//author route
+// ================= AUTHOR ROUTES =================
 router.post('/registerauthor', author.registerauthor);
 router.post('/author/login', author.loginauthor);
 router.get('/author/getprofile/:id', isauthor, author.getauthorprofile);
+router.get('/author/getprofile', isauthor, author.getauthorprofile);
+router.put('/author/updateprofile', isauthor, author.updateauthorprofile);
 router.put('/author/updateauthor/:id', isauthor, author.updateauthorprofile);
 router.put('/changepassword/:id', isauthor, author.changeauthorpasssword);
 router.get('/author/logout', author.logoutauthor);
 router.delete('/deleteauthor/:id', isauthor, author.deleteauthor);
 
-//book route
-// FIX: getallbooks ka route tha hi nahi, isliye catalog ki list koi nahi la sakta tha
+// ================= BOOK ROUTES =================
 router.get("/getallbooks", book.getallbooks);
-// FIX: ye pehle book.getallbooks se juda tha, ab author ki apni books wale method se
 router.get("/author/mybooks", isauthor, book.getmybooks);
 router.get("/getbookbyid/:id", book.getbookbyid);
 router.get("/searchbooks", book.searchbook);
-// Sirf Author
 router.post("/addbook", isauthor, book.addbook);
+router.post("/author/addbook", isauthor, book.addbook);
 router.put("/updatebook/:id", isauthor, book.updatebook);
+router.put("/author/updatebook/:id", isauthor, book.updatebook);
 router.delete("/deletebook/:id", isauthor, book.deletebook);
+router.delete("/author/deletebook/:id", isauthor, book.deletebook);
 
-//bookshelf route
-router.post("/addbookshelf", isuser, bookshelf.addbookshelf);
+// ================= BOOKSHELF ROUTES =================
 router.get("/getbookshelf", isuser, bookshelf.getallbookshelf);
-// FIX: shlef ko shelf kiya (spelling), controller ke method naam same hain
+router.get("/bookshelf", isuser, bookshelf.getallbookshelf);
+router.post("/addbookshelf", isuser, bookshelf.addbookshelf);
+router.post("/bookshelf", isuser, bookshelf.addbookshelf);
 router.get("/getbookshelfbyid/:id", isuser, bookshelf.getbookshelfbyid);
 router.put("/updatebookshelf/:id", isuser, bookshelf.updatebookshelf);
+router.put("/bookshelf/:id", isuser, bookshelf.updatebookshelf);
 router.delete("/deletebookshelf/:id", isuser, bookshelf.deletebookshelf);
+router.delete("/bookshelf/:id", isuser, bookshelf.deletebookshelf);
 
-// review route
+// ================= REVIEW ROUTES =================
 router.post("/addreviews", isuser, review.writereview);
 router.get("/reviews/book/:bookId", review.getreviewforbook);
+router.get("/reviewbybookid/:bookId", review.getreviewforbook);
 router.get("/myreviews", isuser, review.getmyreviews);
 router.put("/updatereview/:id", isuser, review.updatereview);
 router.delete("/deletereview/:id", isuser, review.deletereview);
@@ -71,21 +76,26 @@ router.post("/reviews/:reviewId/like", isuser, review.toggleLikeReview);
 router.get("/author/bookreviews", isauthor, review.getAuthorBookReviews);
 router.delete("/author/review/:id", isauthor, review.deleteAuthorReview);
 
-// favourite route
-router.post('/addfavbook', isuser, favourite.addFavorite);
+// ================= FAVOURITE ROUTES =================
 router.get('/getfavorites', isuser, favourite.getFavorites);
+router.post('/addfavbook', isuser, favourite.addFavorite);
+router.post('/addtofavorite/:id', isuser, favourite.addFavorite);
+router.post('/removefromfavorite/:id', isuser, favourite.removeFavorite);
+router.delete('/removefromfavorite/:id', isuser, favourite.removeFavorite);
 router.delete('/removebook/:id', isuser, favourite.removeFavorite);
 
-// blog route
+// ================= BLOG ROUTES =================
 router.post("/writeblog", isuser, blog.writeblog);
+router.post("/createblog", isuser, blog.writeblog);
 router.get("/getallblog", blog.getallblog);
 router.get("/getmyblogs", isuser, blog.getmyblogs);
 router.get("/getblogbyid/:id", blog.getblogbyid);
 router.put("/updateblog/:id", isuser, blog.updateblog);
+router.put("/editblog/:id", isuser, blog.updateblog);
 router.put("/likeblog/:id", isuser, blog.likeblog);
 router.delete("/deleteblog/:id", isuser, blog.deleteblog);
 
-// AI: ai route
+// ================= AI ROUTES =================
 router.get("/reviewsummary/:bookId", aiLimiter, ai.reviewsummary);
 router.get("/blogsummary/:id", aiLimiter, ai.blogsummary);
 router.post("/ai/blogdraft", isuser, aiLimiter, ai.blogdraft);

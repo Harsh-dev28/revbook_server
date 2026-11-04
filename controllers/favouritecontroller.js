@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Favourite = require('../models/favourite');
 const Book = require('../models/book');
 
@@ -5,9 +6,7 @@ class FavoriteController {
 
     static addFavorite = async (req, res) => {
         try {
-
-            // Get bookId safely
-            const bookId = req.body?.bookId;
+            const bookId = req.body?.bookId || req.params?.id || req.params?.bookId;
 
             if (!bookId) {
                 return res.status(400).json({
@@ -16,7 +15,13 @@ class FavoriteController {
                 });
             }
 
-            // Check if book exists
+            if (!mongoose.Types.ObjectId.isValid(bookId)) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid Book ID."
+                });
+            }
+
             const book = await Book.findById(bookId);
 
             if (!book) {
@@ -26,7 +31,6 @@ class FavoriteController {
                 });
             }
 
-            // Get logged-in user
             const userId = req.user?._id || req.user?.id;
 
             if (!userId) {
@@ -36,20 +40,20 @@ class FavoriteController {
                 });
             }
 
-            // Check if already added
             const existingFavorite = await Favourite.findOne({
                 user: userId,
                 book: bookId
             });
 
             if (existingFavorite) {
-                return res.status(409).json({
-                    success: false,
-                    message: "Book already exists in favorites."
+                return res.status(200).json({
+                    success: true,
+                    message: "Book already exists in favorites.",
+                    favorite: existingFavorite,
+                    fav: existingFavorite
                 });
             }
 
-            // Create favorite
             const favorite = await Favourite.create({
                 user: userId,
                 book: bookId
@@ -58,12 +62,12 @@ class FavoriteController {
             return res.status(201).json({
                 success: true,
                 message: "Book added to favorites successfully.",
-                favorite
+                favorite,
+                fav: favorite
             });
 
         } catch (error) {
-            console.error(error);
-
+            console.error("Add favorite error:", error);
             return res.status(500).json({
                 success: false,
                 message: error.message || "Internal Server Error"
@@ -73,13 +77,32 @@ class FavoriteController {
 
     static removeFavorite = async (req, res) => {
         try {
-            const userId = req.user._id || req.user.id;
-            const favorite = await Favourite.findOne({ _id: req.params.id, user: userId });
+            const userId = req.user?._id || req.user?.id;
+            const targetId = req.params?.id || req.body?.bookId || req.body?.id;
+
+            if (!targetId) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Favorite ID or Book ID is required"
+                });
+            }
+
+            const query = { user: userId };
+            if (mongoose.Types.ObjectId.isValid(targetId)) {
+                query.$or = [{ _id: targetId }, { book: targetId }];
+            } else {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid ID format"
+                });
+            }
+
+            const favorite = await Favourite.findOne(query);
 
             if (!favorite) {
-                return res.status(404).json({
-                    success: false,
-                    message: "Favorite not found or unauthorized"
+                return res.status(200).json({
+                    success: true,
+                    message: "Favorite already removed or not found"
                 });
             }
 
@@ -91,7 +114,7 @@ class FavoriteController {
             });
 
         } catch (error) {
-            console.log(error);
+            console.error("Remove favorite error:", error);
             return res.status(500).json({
                 success: false,
                 message: "Internal server error"
@@ -110,21 +133,18 @@ class FavoriteController {
                 });
             }
 
-            console.log("Logged-in user ID:", userId);
-
             const favorites = await Favourite.find({
                 user: userId
             }).populate("book");
 
-            console.log("Found favorites:", favorites.length);
-
             return res.status(200).json({
                 success: true,
                 message: "Favorite Books",
-                Favorites: favorites
+                Favorites: favorites,
+                favorites
             });
         } catch (error) {
-            console.error(error);
+            console.error("Get favorites error:", error);
             return res.status(500).json({
                 success: false,
                 message: "Internal server error"
